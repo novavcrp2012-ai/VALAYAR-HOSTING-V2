@@ -366,7 +366,7 @@ class Database:
         self.conn.close()
 
 # Initialize bot with command prefix '/'
-class VALAYAR HOSTINGBot(commands.Bot):
+class VALAYAR_HOSTINGBot(commands.Bot):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.db = Database(DB_FILE)
@@ -809,7 +809,7 @@ async def on_ready():
 async def show_commands(ctx):
     """Show all available commands"""
     try:
-        embed = discord.Embed(title="🤖 VALAYAR HOSTING VPS Bot Commands", color=discord.Color.blue())
+        embed = discord.Embed(title="🤖 VALAYAR_HOSTING_VPS Bot Commands", color=discord.Color.blue())
         
         # User commands
         embed.add_field(name="User Commands", value="""
@@ -2643,27 +2643,17 @@ async def on_command_error(ctx, error):
         logger.error(f"Command error: {error}")
         await ctx.send(f"❌ An error occurred: {str(error)}", ephemeral=True)
 
-# Run the bot
-if __name__ == "__main__":
-    try:
-        # Create directories if they don't exist
-        os.makedirs("temp_dockerfiles", exist_ok=True)
-        os.makedirs("migrations", exist_ok=True)
-        
-        bot.run(TOKEN)
-    except Exception as e:
-        logger.error(f"Bot crashed: {e}")
-        traceback.print_exc()
+# --- In your Database class ---
 
-# In Database class, add this to _create_tables
+# Inside the _create_tables method, add this:
 self.cursor.execute("""
-    CREATE TABLE IF NOT EXISTS paid_users (
-        user_id TEXT PRIMARY KEY,
-        ipv4_address TEXT
-    )
+CREATE TABLE IF NOT EXISTS paid_users (
+    user_id TEXT PRIMARY KEY,
+    ipv4_address TEXT
+)
 """)
 
-# Add the following methods to the Database class
+# Then, still inside the Database class, add these methods:
 def is_paid_user(self, user_id):
     self.cursor.execute("SELECT 1 FROM paid_users WHERE user_id = ?", (str(user_id),))
     return self.cursor.fetchone() is not None
@@ -2677,8 +2667,9 @@ def get_ipv4(self, user_id):
     result = self.cursor.fetchone()
     return result[0] if result else None
 
+# --- Outside the Database class, add these bot commands ---
 
-# Command to assign IPv4 address (Admin only)
+# Assign IPv4 command (Admin only)
 @bot.hybrid_command(name="assign_ipv4", description="Assign an IPv4 address to a paid user (Admin only)")
 @app_commands.describe(user="User", ipv4="IPv4 address to assign")
 async def assign_ipv4(ctx, user: discord.User, ipv4: str):
@@ -2688,7 +2679,7 @@ async def assign_ipv4(ctx, user: discord.User, ipv4: str):
     bot.db.assign_ipv4(user.id, ipv4)
     await ctx.send(f"✅ Assigned IPv4 {ipv4} to {user.mention}")
 
-# Command to view your assigned IPv4 address
+# View IPv4 command for users
 @bot.hybrid_command(name="view_ipv4", description="View your assigned IPv4 address")
 async def view_ipv4(ctx):
     ipv4 = bot.db.get_ipv4(ctx.author.id)
@@ -2697,17 +2688,39 @@ async def view_ipv4(ctx):
     else:
         await ctx.send(f"🌐 Your assigned IPv4 address is: `{ipv4}`", ephemeral=True)
 
+# --- Inside your create_vps_command function ---
 
-# In create_vps_command, before creating the VPS, add:
-if not bot.db.is_paid_user(owner.id):
-    await ctx.send("❌ This feature is only available for paid users.", ephemeral=True)
-    return
+@bot.hybrid_command(name="create_vps", description="Create a VPS (Paid users only)")
+@app_commands.describe(memory="Memory in GB", cpu="CPU cores", disk="Disk space in GB", owner="User")
+async def create_vps_command(ctx, memory: int, cpu: int, disk: int, owner: discord.Member):
+    if not has_admin_role(ctx):
+        await ctx.send("❌ Only admins can create VPS instances!", ephemeral=True)
+        return
 
-# After successful VPS creation, add:
-ipv4_address = f"192.168.1.{random.randint(2, 254)}"
-bot.db.assign_ipv4(owner.id, ipv4_address)
+    if not bot.db.is_paid_user(owner.id):
+        await ctx.send("❌ This feature is only available for paid users.", ephemeral=True)
+        return
 
-# In the connection details embed, add:
-ipv4 = bot.db.get_ipv4(owner.id)
-if ipv4:
-    embed.add_field(name="🌐 IPv4 Address", value=ipv4, inline=True)
+    # Proceed with VPS creation logic here...
+    await ctx.send("✅ VPS creation started!")
+
+    # Simulate VPS creation process (you should replace this with actual code)
+    # e.g., creating container, configuring etc.
+    await asyncio.sleep(2)  # Example delay
+
+    # After VPS creation is successful, assign IPv4
+    ipv4_address = f"192.168.1.{random.randint(2, 254)}"
+    bot.db.assign_ipv4(owner.id, ipv4_address)
+
+    # Prepare connection details
+    embed = discord.Embed(title="VPS Connection Details")
+    embed.add_field(name="Memory", value=f"{memory} GB", inline=True)
+    embed.add_field(name="CPU", value=f"{cpu} cores", inline=True)
+    embed.add_field(name="Disk", value=f"{disk} GB", inline=True)
+    embed.add_field(name="Owner", value=owner.mention, inline=True)
+
+    ipv4 = bot.db.get_ipv4(owner.id)
+    if ipv4:
+        embed.add_field(name="🌐 IPv4 Address", value=ipv4, inline=True)
+
+    await ctx.send(embed=embed)
